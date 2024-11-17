@@ -3,10 +3,11 @@ import requests
 
 def get_prices_by_article(article):
     """
-    Получает три цены товара по артикулу Wildberries: текущая цена, цена со скидкой, базовая цена.
+    Fetches prices for a product by its Wildberries article number: basic price, product price (discounted), 
+    total price, logistics cost, and return value.
     
-    :param article: Артикул товара (str или int)
-    :return: Словарь с ценами или сообщение об ошибке
+    :param article: Article number of the product (str or int)
+    :return: Tuple containing prices or an error message
     """
     url = f"https://card.wb.ru/cards/v2/detail"
     params = {
@@ -23,88 +24,97 @@ def get_prices_by_article(article):
         response.raise_for_status()
         data = response.json()
         
-        # Проверяем наличие данных о продукте
+        # Check if product data exists
         products = data.get("data", {}).get("products", [])
         if not products:
-            return None, None, None, f"Товар с артикулом {article} не найден."
+            return None, None, None, None, None, f"Product with article {article} not found."
         
-        # Берем первый продукт из массива (если их несколько)
+        # Take the first product in the list (if multiple exist)
         product = products[0]
         sizes = product.get("sizes", [])
         
-        # Проверяем цены для каждого размера
+        # Check prices for each size
         for size in sizes:
             price_info = size.get("price", {})
             if price_info:
-                discount_price = price_info.get("product")
-                sale_price = price_info.get("total")
-                basic_price = price_info.get("basic")
-                if discount_price and sale_price and basic_price:
+                basic_price = price_info.get("basic")      # basic price
+                discount_price = price_info.get("product") # product (discounted) price
+                total_price = price_info.get("total")      # total price including logistics
+                logistics = price_info.get("logistics")    # logistics cost
+                return_value = price_info.get("return")    # return cost
+                
+                if basic_price and discount_price and total_price:
                     return (
-                        f"{basic_price / 100:.2f} RUB",  # Базовая цена
-                        f"{discount_price / 100:.2f} RUB",  # Цена со скидкой
-                        f"{sale_price / 100:.2f} RUB",  # Итоговая цена
-                        None  # Ошибок нет
+                        f"{basic_price / 100:.2f} RUB",    # basic price
+                        f"{discount_price / 100:.2f} RUB", # product (discounted) price
+                        f"{total_price / 100:.2f} RUB",    # total price
+                        f"{logistics / 100:.2f} RUB",      # logistics cost
+                        f"{return_value / 100:.2f} RUB",   # return cost
+                        None                                # No error
                     )
         
-        return None, None, None, f"Для артикула {article} отсутствуют доступные размеры с ценами."
+        return None, None, None, None, None, f"No available sizes with prices for article {article}."
     
     except requests.RequestException as e:
-        return None, None, None, f"Ошибка при запросе: {str(e)}"
+        return None, None, None, None, None, f"Request error: {str(e)}"
 
 def process_excel(input_file, output_file):
     """
-    Обрабатывает Excel-файл: считывает артикули из первой колонки, получает цены и записывает их в новый файл.
+    Processes an Excel file: reads article numbers from the first column, fetches prices, and writes results to a new file.
     
-    :param input_file: Путь к входному Excel-файлу
-    :param output_file: Путь к выходному Excel-файлу
+    :param input_file: Path to the input Excel file
+    :param output_file: Path to the output Excel file
     """
     try:
-        # Читаем Excel-файл
+        # Read the Excel file
         df = pd.read_excel(input_file)
         
-        # Убедимся, что колонка с артикулами существует
+        # Ensure the column with articles exists
         if df.empty or df.columns[0] is None:
-            print("Файл пустой или не содержит колонку с артикулами.")
+            print("The file is empty or does not contain an article column.")
             return
         
-        # Создание новых колонок для результатов
-        df["Базовая цена"] = ""
-        df["Цена со скидкой"] = ""
-        df["Итоговая цена"] = ""
-        df["Ошибка"] = ""
+        # Create new columns for results based on JSON field names
+        df["basic"] = ""
+        df["product"] = ""
+        df["total"] = ""
+        df["logistics"] = ""
+        df["return"] = ""
+        df["error"] = ""
 
-        total_items = len(df)  # Общее количество элементов
-        # Обработка цен
+        total_items = len(df)  # Total number of articles
+        # Process prices
         for idx, article in enumerate(df.iloc[:, 0]):
-            current_item = idx + 1  # Текущий элемент
+            current_item = idx + 1  # Current item
             if pd.isna(article):
-                df.loc[idx, "Ошибка"] = "Пустой артикул"
-                print(f"[{current_item}/{total_items}] Пустой артикул")
+                df.loc[idx, "error"] = "Empty article"
+                print(f"[{current_item}/{total_items}] Empty article")
                 continue
             
-            # Получение цен
-            basic_price, discount_price, total_price, error = get_prices_by_article(str(int(article)))
-            df.loc[idx, "Базовая цена"] = basic_price
-            df.loc[idx, "Цена со скидкой"] = discount_price
-            df.loc[idx, "Итоговая цена"] = total_price
-            df.loc[idx, "Ошибка"] = error
+            # Fetch prices
+            basic_price, discount_price, total_price, logistics, return_value, error = get_prices_by_article(str(int(article)))
+            df.loc[idx, "basic"] = basic_price
+            df.loc[idx, "product"] = discount_price
+            df.loc[idx, "total"] = total_price
+            df.loc[idx, "logistics"] = logistics
+            df.loc[idx, "return"] = return_value
+            df.loc[idx, "error"] = error
 
             if error:
-                print(f"[{current_item}/{total_items}] Артикул {article}: {error}")
+                print(f"[{current_item}/{total_items}] Article {article}: {error}")
             else:
-                print(f"[{current_item}/{total_items}] Артикул {article}: Базовая цена: {basic_price}, Цена со скидкой: {discount_price}, Итоговая цена: {total_price}")
+                print(f"[{current_item}/{total_items}] Article {article}: Basic: {basic_price}, Product (Discounted): {discount_price}, Total: {total_price}, Logistics: {logistics}, Return: {return_value}")
         
-        # Сохраняем результаты в новый Excel
+        # Save results to a new Excel file
         df.to_excel(output_file, index=False)
-        print(f"Результаты сохранены в файл {output_file}")
+        print(f"Results saved to file {output_file}")
     
     except Exception as e:
-        print(f"Ошибка обработки файла: {str(e)}")
+        print(f"Error processing file: {str(e)}")
 
-# Пример использования
+# Example usage
 if __name__ == "__main__":
-    input_file = "input.xlsx"  # Входной файл
-    output_file = "output.xlsx"  # Выходной файл
+    input_file = "input.xlsx"  # Input file
+    output_file = "output.xlsx"  # Output file
     
     process_excel(input_file, output_file)
