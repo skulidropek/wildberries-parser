@@ -74,11 +74,13 @@ def process_excel(input_file, output_file):
         df["Итоговая цена"] = ""
         df["Ошибка"] = ""
 
+        total_items = len(df)  # Общее количество элементов
         # Обработка цен
         for idx, article in enumerate(df.iloc[:, 0]):
+            current_item = idx + 1  # Текущий элемент
             if pd.isna(article):
                 df.loc[idx, "Ошибка"] = "Пустой артикул"
-                print(f"Пустой артикул на строке {idx + 1}")
+                print(f"[{current_item}/{total_items}] Пустой артикул")
                 continue
             
             # Получение цен
@@ -89,9 +91,9 @@ def process_excel(input_file, output_file):
             df.loc[idx, "Ошибка"] = error
 
             if error:
-                print(f"Артикул {article}: {error}")
+                print(f"[{current_item}/{total_items}] Артикул {article}: {error}")
             else:
-                print(f"Артикул {article}: Базовая цена: {basic_price}, Цена со скидкой: {discount_price}, Итоговая цена: {total_price}")
+                print(f"[{current_item}/{total_items}] Артикул {article}: Базовая цена: {basic_price}, Цена со скидкой: {discount_price}, Итоговая цена: {total_price}")
         
         # Сохраняем результаты в новый Excel
         df.to_excel(output_file, index=False)
