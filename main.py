@@ -26,7 +26,7 @@ def get_prices_by_article(article):
         # Проверяем наличие данных о продукте
         products = data.get("data", {}).get("products", [])
         if not products:
-            return f"Причина: Товар с артикулом {article} не найден."
+            return None, None, None, f"Товар с артикулом {article} не найден."
         
         # Берем первый продукт из массива (если их несколько)
         product = products[0]
@@ -40,16 +40,17 @@ def get_prices_by_article(article):
                 sale_price = price_info.get("total")
                 basic_price = price_info.get("basic")
                 if discount_price and sale_price and basic_price:
-                    return {
-                        "Цена со скидкой": f"{discount_price / 100:.2f} RUB",
-                        "Итоговая цена (акция)": f"{sale_price / 100:.2f} RUB",
-                        "Базовая цена": f"{basic_price / 100:.2f} RUB"
-                    }
+                    return (
+                        f"{basic_price / 100:.2f} RUB",  # Базовая цена
+                        f"{discount_price / 100:.2f} RUB",  # Цена со скидкой
+                        f"{sale_price / 100:.2f} RUB",  # Итоговая цена
+                        None  # Ошибок нет
+                    )
         
-        return f"Причина: Для артикула {article} отсутствуют доступные размеры с ценами."
+        return None, None, None, f"Для артикула {article} отсутствуют доступные размеры с ценами."
     
     except requests.RequestException as e:
-        return f"Причина: Ошибка при запросе: {str(e)}"
+        return None, None, None, f"Ошибка при запросе: {str(e)}"
 
 def process_excel(input_file, output_file):
     """
@@ -67,29 +68,32 @@ def process_excel(input_file, output_file):
             print("Файл пустой или не содержит колонку с артикулами.")
             return
         
+        # Создание новых колонок для результатов
+        df["Базовая цена"] = ""
+        df["Цена со скидкой"] = ""
+        df["Итоговая цена"] = ""
+        df["Ошибка"] = ""
+
         # Обработка цен
-        prices_list = []
-        for article in df.iloc[:, 0]:
+        for idx, article in enumerate(df.iloc[:, 0]):
             if pd.isna(article):
-                prices_list.append("Причина: Пустой артикул")
-                print("Пустой артикул")
+                df.loc[idx, "Ошибка"] = "Пустой артикул"
+                print(f"Пустой артикул на строке {idx + 1}")
                 continue
             
             # Получение цен
-            result = get_prices_by_article(str(int(article)))
-            if isinstance(result, dict):
-                # Форматируем результат в строку
-                prices_str = "; ".join([f"{key}: {value}" for key, value in result.items()])
-                print(f"Артикул {article}: {prices_str}")
-                prices_list.append(prices_str)
+            basic_price, discount_price, total_price, error = get_prices_by_article(str(int(article)))
+            df.loc[idx, "Базовая цена"] = basic_price
+            df.loc[idx, "Цена со скидкой"] = discount_price
+            df.loc[idx, "Итоговая цена"] = total_price
+            df.loc[idx, "Ошибка"] = error
+
+            if error:
+                print(f"Артикул {article}: {error}")
             else:
-                print(f"Артикул {article}: {result}")
-                prices_list.append(result)
+                print(f"Артикул {article}: Базовая цена: {basic_price}, Цена со скидкой: {discount_price}, Итоговая цена: {total_price}")
         
-        # Добавляем результаты в новый столбец
-        df["Цены"] = prices_list
-        
-        # Сохраняем в новый Excel
+        # Сохраняем результаты в новый Excel
         df.to_excel(output_file, index=False)
         print(f"Результаты сохранены в файл {output_file}")
     
